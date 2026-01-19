@@ -1352,7 +1352,7 @@ public class MetricsService
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
-| 1.0 | 2024-XX-XX | Solution Architect | Initial version |
+| 1.0 | 2026-01-19 | Solution Architect | Initial version |
 
 ---
 

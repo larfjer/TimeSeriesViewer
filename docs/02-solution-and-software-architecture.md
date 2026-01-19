@@ -522,6 +522,11 @@ interface AppState {
 
 ### 5.1 Database Schema
 
+> **Implementation Notes:**
+> - Consider using SQL Server's native JSON data type (available in SQL Server 2016+) for JSON columns during implementation
+> - Status fields should be implemented using CHECK constraints or lookup tables to ensure data consistency
+> - All enumerations should be validated at the application layer with corresponding C# enums
+
 ```sql
 -- Users and Authentication
 CREATE TABLE Users (
