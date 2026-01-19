@@ -4,11 +4,11 @@
 
 ### 1.1 Purpose
 
-This document provides a comprehensive technical architecture for the TimeSeriesViewer SaaS platform. It serves as the primary reference for development teams, architects, and stakeholders involved in building and maintaining the system.
+This document provides a comprehensive technical architecture for the TimeSeriesViewer SaaS platform.  It serves as the primary reference for development teams, architects, and stakeholders involved in building and maintaining the system. 
 
 ### 1.2 Scope
 
-This architecture covers:
+This architecture covers: 
 - System context and boundaries
 - Logical and physical architecture
 - Component design and interactions
@@ -20,10 +20,10 @@ This architecture covers:
 ### 1.3 Architectural Principles
 
 1. **Cloud-Native First**: Design for cloud scalability and resilience
-2. **API-First**: All functionality accessible via well-defined APIs
+2. **API-First**:  All functionality accessible via well-defined APIs
 3. **Security by Design**: Security considerations at every layer
-4. **Observability**: Comprehensive logging, monitoring, and tracing
-5. **Cost Efficiency**: Optimize for operational costs
+4. **Observability**:  Comprehensive logging, monitoring, and tracing
+5. **Cost Efficiency**:  Optimize for operational costs
 6. **Simplicity**: Favor simple solutions over complex ones
 
 ---
@@ -32,44 +32,40 @@ This architecture covers:
 
 ### 2.1 Context Diagram
 
-```
-                                    ┌─────────────────────────────────────┐
-                                    │         External Systems            │
-                                    │  ┌─────────┐  ┌─────────┐          │
-                                    │  │ Google  │  │  Apple  │          │
-                                    │  │  Auth   │  │  Auth   │          │
-                                    │  └────┬────┘  └────┬────┘          │
-                                    │       │            │               │
-                                    │  ┌────┴────┐  ┌────┴────┐         │
-                                    │  │Microsoft│  │ Stripe  │         │
-                                    │  │  Auth   │  │ Payment │         │
-                                    │  └────┬────┘  └────┬────┘         │
-                                    └───────┼────────────┼───────────────┘
-                                            │            │
-                                            ▼            ▼
-┌───────────────────┐              ┌─────────────────────────────────────┐
-│                   │              │                                     │
-│   End Users       │◄────────────►│       TimeSeriesViewer SaaS        │
-│   (Browsers)      │   HTTPS      │                                     │
-│                   │              │  - File Analysis                    │
-└───────────────────┘              │  - Visualization                    │
-                                   │  - Project Management               │
-┌───────────────────┐              │  - User Management                  │
-│                   │              │                                     │
-│   Administrators  │◄────────────►│                                     │
-│                   │   HTTPS      └─────────────────────────────────────┘
-│                   │                              │
-└───────────────────┘                              │
-                                                   ▼
-                                   ┌─────────────────────────────────────┐
-                                   │       Azure Infrastructure          │
-                                   │                                     │
-                                   │  - Compute (AKS/Container Apps)    │
-                                   │  - Storage (Blob, SQL)             │
-                                   │  - Identity (Azure AD B2C)         │
-                                   │  - Monitoring (App Insights)       │
-                                   │                                     │
-                                   └─────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph External["External Systems"]
+        Google["Google Auth"]
+        Apple["Apple Auth"]
+        Microsoft["Microsoft Auth"]
+        Stripe["Stripe Payment"]
+    end
+
+    subgraph Users["Users"]
+        EndUsers["End Users<br/>(Browsers)"]
+        Admins["Administrators"]
+    end
+
+    subgraph TSV["TimeSeriesViewer SaaS"]
+        Features["- File Analysis<br/>- Visualization<br/>- Project Management<br/>- User Management"]
+    end
+
+    subgraph Azure["Azure Infrastructure"]
+        Compute["Compute (AKS/Container Apps)"]
+        Storage["Storage (Blob, SQL)"]
+        Identity["Identity (Azure AD B2C)"]
+        Monitoring["Monitoring (App Insights)"]
+    end
+
+    Google --> TSV
+    Apple --> TSV
+    Microsoft --> TSV
+    Stripe --> TSV
+
+    EndUsers <-->|HTTPS| TSV
+    Admins <-->|HTTPS| TSV
+
+    TSV --> Azure
 ```
 
 ### 2.2 Actors
@@ -87,171 +83,195 @@ This architecture covers:
 
 ### 3.1 Layered Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        PRESENTATION LAYER                               │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │                     React Single Page Application                  │  │
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐    │  │
-│  │  │  Auth   │ │Dashboard│ │ Charts  │ │ Files   │ │Settings │    │  │
-│  │  │  Views  │ │  Views  │ │  Views  │ │  Views  │ │  Views  │    │  │
-│  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘    │  │
-│  │                                                                    │  │
-│  │  ┌─────────────────────────────────────────────────────────────┐  │  │
-│  │  │              Shared Components & Services                    │  │  │
-│  │  │   (API Client, State Management, Utils, Types)              │  │  │
-│  │  └─────────────────────────────────────────────────────────────┘  │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────┘
-                                     │
-                                     │ REST API / WebSocket (SignalR)
-                                     ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         API GATEWAY LAYER                               │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │                   Azure API Management                             │  │
-│  │                                                                    │  │
-│  │  - Request Routing          - Rate Limiting                       │  │
-│  │  - Authentication           - Request/Response Transformation     │  │
-│  │  - SSL Termination          - API Versioning                      │  │
-│  │  - CORS Management          - Usage Analytics                     │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────┘
-                                     │
-                                     ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                       APPLICATION LAYER                                 │
-│  ┌─────────────────────────────────────────────────────────────────────┐│
-│  │                   ASP.NET Core Web API Services                     ││
-│  │                                                                     ││
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐             ││
-│  │  │    User      │  │    File      │  │    Project   │             ││
-│  │  │   Service    │  │   Service    │  │   Service    │             ││
-│  │  └──────────────┘  └──────────────┘  └──────────────┘             ││
-│  │                                                                     ││
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐             ││
-│  │  │    Chart     │  │   Billing    │  │   Export     │             ││
-│  │  │   Service    │  │   Service    │  │   Service    │             ││
-│  │  └──────────────┘  └──────────────┘  └──────────────┘             ││
-│  └─────────────────────────────────────────────────────────────────────┘│
-│                                                                         │
-│  ┌─────────────────────────────────────────────────────────────────────┐│
-│  │                   Azure Functions (Serverless)                      ││
-│  │                                                                     ││
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐             ││
-│  │  │    File      │  │    Data      │  │    Chart     │             ││
-│  │  │  Processor   │  │ Transformer  │  │  Exporter    │             ││
-│  │  └──────────────┘  └──────────────┘  └──────────────┘             ││
-│  │                                                                     ││
-│  │  ┌──────────────┐  ┌──────────────┐                                ││
-│  │  │   Cleanup    │  │  Notification│                                ││
-│  │  │   Function   │  │   Function   │                                ││
-│  │  └──────────────┘  └──────────────┘                                ││
-│  └─────────────────────────────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────────────────┘
-                                     │
-                                     ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        DOMAIN LAYER                                     │
-│  ┌─────────────────────────────────────────────────────────────────────┐│
-│  │                    Domain Models & Business Logic                   ││
-│  │                                                                     ││
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐             ││
-│  │  │    User      │  │  TimeSeries  │  │   Project    │             ││
-│  │  │   Domain     │  │   Domain     │  │   Domain     │             ││
-│  │  └──────────────┘  └──────────────┘  └──────────────┘             ││
-│  │                                                                     ││
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐             ││
-│  │  │    Chart     │  │Subscription  │  │   Export     │             ││
-│  │  │   Domain     │  │   Domain     │  │   Domain     │             ││
-│  │  └──────────────┘  └──────────────┘  └──────────────┘             ││
-│  └─────────────────────────────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────────────────┘
-                                     │
-                                     ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                     INFRASTRUCTURE LAYER                                │
-│  ┌───────────────┐ ┌───────────────┐ ┌───────────────┐ ┌─────────────┐ │
-│  │  Repositories │ │ External APIs │ │  File Storage │ │   Caching   │ │
-│  │               │ │               │ │               │ │             │ │
-│  │ - UserRepo    │ │ - Stripe API  │ │ - Blob Client │ │ - Redis     │ │
-│  │ - ProjectRepo │ │ - Auth APIs   │ │ - File Reader │ │   Client    │ │
-│  │ - FileRepo    │ │               │ │               │ │             │ │
-│  └───────────────┘ └───────────────┘ └───────────────┘ └─────────────┘ │
-└─────────────────────────────────────────────────────────────────────────┘
-                                     │
-                                     ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                          DATA LAYER                                     │
-│  ┌───────────────┐ ┌───────────────┐ ┌───────────────┐ ┌─────────────┐ │
-│  │   Azure SQL   │ │  Azure Blob   │ │  Azure Redis  │ │Azure Queues │ │
-│  │   Database    │ │   Storage     │ │    Cache      │ │             │ │
-│  └───────────────┘ └───────────────┘ └───────────────┘ └─────────────┘ │
-└─────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph Presentation["PRESENTATION LAYER"]
+        subgraph SPA["React Single Page Application"]
+            AuthViews["Auth Views"]
+            DashboardViews["Dashboard Views"]
+            ChartsViews["Charts Views"]
+            FilesViews["Files Views"]
+            SettingsViews["Settings Views"]
+            SharedComponents["Shared Components & Services<br/>(API Client, State Management, Utils, Types)"]
+        end
+    end
+
+    subgraph APIGateway["API GATEWAY LAYER"]
+        subgraph APIM["Azure API Management"]
+            Routing["Request Routing"]
+            Auth["Authentication"]
+            SSL["SSL Termination"]
+            CORS["CORS Management"]
+            RateLimit["Rate Limiting"]
+            Transform["Request/Response Transformation"]
+            Versioning["API Versioning"]
+            Analytics["Usage Analytics"]
+        end
+    end
+
+    subgraph Application["APPLICATION LAYER"]
+        subgraph WebAPI["ASP.NET Core Web API Services"]
+            UserService["User Service"]
+            FileService["File Service"]
+            ProjectService["Project Service"]
+            ChartService["Chart Service"]
+            BillingService["Billing Service"]
+            ExportService["Export Service"]
+        end
+        subgraph Functions["Azure Functions (Serverless)"]
+            FileProcessor["File Processor"]
+            DataTransformer["Data Transformer"]
+            ChartExporter["Chart Exporter"]
+            CleanupFunction["Cleanup Function"]
+            NotificationFunction["Notification Function"]
+        end
+    end
+
+    subgraph Domain["DOMAIN LAYER"]
+        subgraph DomainModels["Domain Models & Business Logic"]
+            UserDomain["User Domain"]
+            TimeSeriesDomain["TimeSeries Domain"]
+            ProjectDomain["Project Domain"]
+            ChartDomain["Chart Domain"]
+            SubscriptionDomain["Subscription Domain"]
+            ExportDomain["Export Domain"]
+        end
+    end
+
+    subgraph Infrastructure["INFRASTRUCTURE LAYER"]
+        Repositories["Repositories<br/>- UserRepo<br/>- ProjectRepo<br/>- FileRepo"]
+        ExternalAPIs["External APIs<br/>- Stripe API<br/>- Auth APIs"]
+        FileStorage["File Storage<br/>- Blob Client<br/>- File Reader"]
+        Caching["Caching<br/>- Redis Client"]
+    end
+
+    subgraph Data["DATA LAYER"]
+        AzureSQL["Azure SQL Database"]
+        AzureBlob["Azure Blob Storage"]
+        AzureRedis["Azure Redis Cache"]
+        AzureQueues["Azure Queues"]
+    end
+
+    Presentation -->|"REST API / WebSocket (SignalR)"| APIGateway
+    APIGateway --> Application
+    Application --> Domain
+    Domain --> Infrastructure
+    Infrastructure --> Data
 ```
 
 ### 3.2 Domain Model
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         DOMAIN MODEL                                     │
-└─────────────────────────────────────────────────────────────────────────┘
+```mermaid
+erDiagram
+    User ||--o| Subscription :  has
+    User ||--o{ Identity : has
+    User ||--o{ Project : owns
+    User ||--o{ TimeSeriesFile : owns
 
-┌──────────────┐         ┌──────────────┐         ┌──────────────┐
-│     User     │         │ Subscription │         │    Project   │
-├──────────────┤    1    ├──────────────┤    *    ├──────────────┤
-│ - Id         │◄────────┤ - Id         │    ┌───►│ - Id         │
-│ - Email      │         │ - Tier       │    │    │ - Name       │
-│ - Name       │    1    │ - Status     │    │    │ - Description│
-│ - ExternalId │◄────┐   │ - StartDate  │    │    │ - CreatedAt  │
-│ - CreatedAt  │     │   │ - EndDate    │    │    │ - UpdatedAt  │
-└──────────────┘     │   └──────────────┘    │    │ - UserId     │
-                     │                       │    └──────┬───────┘
-                     │                       │           │
-                     │   ┌──────────────┐    │           │ 1
-                     │   │   Identity   │    │           │
-                     │   ├──────────────┤    │           ▼
-                     └───┤ - Provider   │    │   ┌──────────────┐    *
-                         │ - ExternalId │    │   │ProjectVersion│◄────┐
-                         │ - UserId     │    │   ├──────────────┤     │
-                         └──────────────┘    │   │ - Id         │     │
-                                             │   │ - Version    │     │
-┌──────────────┐         ┌──────────────┐    │   │ - Name       │     │
-│  TimeSeriesFile│  *    │ FileColumn   │    │   │ - Config     │     │
-├──────────────┤◄────────┤──────────────┤    │   │ - CreatedAt  │     │
-│ - Id         │         │ - Id         │    │   │ - ProjectId  │     │
-│ - Name       │         │ - Name       │    │   └──────────────┘     │
-│ - Path       │         │ - DataType   │    │                        │
-│ - Format     │         │ - Unit       │    │                        │
-│ - Size       │         │ - FileId     │    │                        │
-│ - UploadedAt │         └──────────────┘    │                        │
-│ - UserId     │                             │                        │
-│ - Status     │─────────────────────────────┘                        │
-└──────────────┘                                                      │
-       │                                                              │
-       │ *                                                            │
-       ▼                                                              │
-┌──────────────┐         ┌──────────────┐         ┌──────────────┐   │
-│   ChartConfig│    *    │  ChartSeries │    *    │ Transformation│   │
-├──────────────┤◄────────┤──────────────┤◄────────┤──────────────┤   │
-│ - Id         │         │ - Id         │         │ - Id         │   │
-│ - Name       │         │ - Name       │         │ - Expression │   │
-│ - Type       │         │ - Color      │         │ - Order      │   │
-│ - Config     │         │ - LineStyle  │         │ - SeriesId   │   │
-│ - ProjectId  │─────────│ - ColumnId   │         └──────────────┘   │
-│ - Order      │         │ - ChartId    │                             │
-└──────────────┘         └──────────────┘                             │
-                                                                      │
-┌──────────────┐                                                      │
-│    Export    │──────────────────────────────────────────────────────┘
-├──────────────┤
-│ - Id         │
-│ - Format     │
-│ - Status     │
-│ - Path       │
-│ - CreatedAt  │
-│ - ProjectId  │
-└──────────────┘
+    Project ||--o{ ProjectVersion : has
+    Project ||--o{ ChartConfig : contains
+    Project ||--o{ Export : generates
+
+    TimeSeriesFile ||--o{ FileColumn : contains
+    TimeSeriesFile }o--o{ Project : "assigned to"
+
+    ChartConfig ||--o{ ChartSeries : contains
+    ChartSeries ||--o{ Transformation : has
+    ChartSeries }o--|| FileColumn : references
+
+    User {
+        guid Id PK
+        string Email
+        string Name
+        string ExternalId
+        datetime CreatedAt
+    }
+
+    Subscription {
+        guid Id PK
+        string Tier
+        string Status
+        datetime StartDate
+        datetime EndDate
+    }
+
+    Identity {
+        guid Id PK
+        string Provider
+        string ExternalId
+        guid UserId FK
+    }
+
+    Project {
+        guid Id PK
+        string Name
+        string Description
+        datetime CreatedAt
+        datetime UpdatedAt
+        guid UserId FK
+    }
+
+    ProjectVersion {
+        guid Id PK
+        int Version
+        string Name
+        json Config
+        datetime CreatedAt
+        guid ProjectId FK
+    }
+
+    TimeSeriesFile {
+        guid Id PK
+        string Name
+        string Path
+        string Format
+        bigint Size
+        datetime UploadedAt
+        guid UserId FK
+        string Status
+    }
+
+    FileColumn {
+        guid Id PK
+        string Name
+        string DataType
+        string Unit
+        guid FileId FK
+    }
+
+    ChartConfig {
+        guid Id PK
+        string Name
+        string Type
+        json Config
+        guid ProjectId FK
+        int Order
+    }
+
+    ChartSeries {
+        guid Id PK
+        string Name
+        string Color
+        string LineStyle
+        guid ColumnId FK
+        guid ChartId FK
+    }
+
+    Transformation {
+        guid Id PK
+        string Expression
+        int Order
+        guid SeriesId FK
+    }
+
+    Export {
+        guid Id PK
+        string Format
+        string Status
+        string Path
+        datetime CreatedAt
+        guid ProjectId FK
+    }
 ```
 
 ---
@@ -422,50 +442,58 @@ POST   /api/billing/webhook                - Stripe webhook handler
 
 #### 4.3.1 Component Hierarchy
 
-```
-App
-├── AuthProvider
-│   └── AppRouter
-│       ├── PublicRoutes
-│       │   ├── LoginPage
-│       │   ├── RegisterPage
-│       │   └── LandingPage
-│       │
-│       └── ProtectedRoutes
-│           ├── DashboardLayout
-│           │   ├── Sidebar
-│           │   │   ├── ProjectList
-│           │   │   ├── FileList
-│           │   │   └── Navigation
-│           │   │
-│           │   └── MainContent
-│           │       ├── DashboardPage
-│           │       │   └── ProjectGrid
-│           │       │
-│           │       ├── ProjectPage
-│           │       │   ├── ProjectHeader
-│           │       │   ├── ChartContainer
-│           │       │   │   ├── Chart
-│           │       │   │   ├── ChartToolbar
-│           │       │   │   └── SeriesConfig
-│           │       │   └── FilePanel
-│           │       │       ├── FileUploader
-│           │       │       └── ColumnSelector
-│           │       │
-│           │       ├── SettingsPage
-│           │       │   ├── ProfileSettings
-│           │       │   ├── BillingSettings
-│           │       │   └── PreferencesSettings
-│           │       │
-│           │       └── FilesPage
-│           │           ├── FileManager
-│           │           └── FileDetails
-│           │
-│           └── Modals
-│               ├── FileUploadModal
-│               ├── ExportModal
-│               ├── TransformationModal
-│               └── VersionHistoryModal
+```mermaid
+flowchart TB
+    App["App"]
+    App --> AuthProvider["AuthProvider"]
+    AuthProvider --> AppRouter["AppRouter"]
+
+    AppRouter --> PublicRoutes["PublicRoutes"]
+    AppRouter --> ProtectedRoutes["ProtectedRoutes"]
+
+    PublicRoutes --> LoginPage["LoginPage"]
+    PublicRoutes --> RegisterPage["RegisterPage"]
+    PublicRoutes --> LandingPage["LandingPage"]
+
+    ProtectedRoutes --> DashboardLayout["DashboardLayout"]
+    ProtectedRoutes --> Modals["Modals"]
+
+    DashboardLayout --> Sidebar["Sidebar"]
+    DashboardLayout --> MainContent["MainContent"]
+
+    Sidebar --> ProjectList["ProjectList"]
+    Sidebar --> FileList["FileList"]
+    Sidebar --> Navigation["Navigation"]
+
+    MainContent --> DashboardPage["DashboardPage"]
+    MainContent --> ProjectPage["ProjectPage"]
+    MainContent --> SettingsPage["SettingsPage"]
+    MainContent --> FilesPage["FilesPage"]
+
+    DashboardPage --> ProjectGrid["ProjectGrid"]
+
+    ProjectPage --> ProjectHeader["ProjectHeader"]
+    ProjectPage --> ChartContainer["ChartContainer"]
+    ProjectPage --> FilePanel["FilePanel"]
+
+    ChartContainer --> Chart["Chart"]
+    ChartContainer --> ChartToolbar["ChartToolbar"]
+    ChartContainer --> SeriesConfig["SeriesConfig"]
+
+    FilePanel --> FileUploader["FileUploader"]
+    FilePanel --> ColumnSelector["ColumnSelector"]
+
+    SettingsPage --> ProfileSettings["ProfileSettings"]
+    SettingsPage --> BillingSettings["BillingSettings"]
+    SettingsPage --> PreferencesSettings["PreferencesSettings"]
+
+    FilesPage --> FileManager["FileManager"]
+    FilesPage --> FileDetails["FileDetails"]
+
+    Modals --> FileUploadModal["FileUploadModal"]
+    Modals --> ExportModal["ExportModal"]
+    Modals --> TransformationModal["TransformationModal"]
+    Modals --> VersionHistoryModal["VersionHistoryModal"]
 ```
 
 #### 4.3.2 State Management Structure
@@ -714,7 +742,7 @@ Redis Cache Structure:
 ├── session:{sessionId}           # User session data (TTL: 24h)
 ├── user:{userId}                 # User profile cache (TTL: 1h)
 ├── project:{projectId}           # Project metadata cache (TTL: 30m)
-├── file:{fileId}:schema          # File schema cache (TTL: 1h)
+├── file:{fileId}: schema          # File schema cache (TTL: 1h)
 ├── chart:{chartId}:data:{hash}   # Chart data cache (TTL: 15m)
 ├── transform:{hash}              # Transformation result cache (TTL: 1h)
 └── ratelimit:{userId}            # Rate limiting counters (TTL: 1m)
@@ -726,43 +754,23 @@ Redis Cache Structure:
 
 ### 6.1 Authentication Flow
 
-```
-┌──────────┐     ┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│  Client  │     │   Azure     │     │   Identity   │     │  Backend    │
-│  (SPA)   │     │   AD B2C    │     │   Provider   │     │   API       │
-└────┬─────┘     └──────┬──────┘     └──────┬───────┘     └──────┬──────┘
-     │                  │                   │                    │
-     │  1. Login Click  │                   │                    │
-     │─────────────────►│                   │                    │
-     │                  │                   │                    │
-     │  2. Redirect to  │                   │                    │
-     │     IdP          │                   │                    │
-     │◄─────────────────│                   │                    │
-     │                  │                   │                    │
-     │  3. Authenticate │                   │                    │
-     │  with IdP        │                   │                    │
-     │──────────────────┼──────────────────►│                    │
-     │                  │                   │                    │
-     │  4. IdP Token    │                   │                    │
-     │◄─────────────────┼───────────────────│                    │
-     │                  │                   │                    │
-     │  5. Exchange Token                   │                    │
-     │─────────────────►│                   │                    │
-     │                  │                   │                    │
-     │  6. B2C JWT      │                   │                    │
-     │◄─────────────────│                   │                    │
-     │                  │                   │                    │
-     │  7. API Request  │                   │                    │
-     │  (Bearer Token)  │                   │                    │
-     │──────────────────┼───────────────────┼───────────────────►│
-     │                  │                   │                    │
-     │                  │                   │    8. Validate     │
-     │                  │                   │       Token        │
-     │                  │◄───────────────────────────────────────│
-     │                  │                   │                    │
-     │  9. API Response │                   │                    │
-     │◄─────────────────┼───────────────────┼────────────────────│
-     │                  │                   │                    │
+```mermaid
+sequenceDiagram
+    participant Client as Client (SPA)
+    participant B2C as Azure AD B2C
+    participant IdP as Identity Provider
+    participant API as Backend API
+
+    Client->>B2C:  1. Login Click
+    B2C->>Client: 2. Redirect to IdP
+    Client->>IdP: 3. Authenticate with IdP
+    IdP->>Client: 4. IdP Token
+    Client->>B2C: 5. Exchange Token
+    B2C->>Client: 6. B2C JWT
+    Client->>API: 7. API Request (Bearer Token)
+    API->>B2C: 8. Validate Token
+    B2C->>API: Token Valid
+    API->>Client: 9. API Response
 ```
 
 ### 6.2 Authorization Model
@@ -829,79 +837,39 @@ public class SubscriptionLimits
 
 ### 7.1 Payment Integration (Stripe)
 
-```
-┌──────────┐     ┌─────────────┐     ┌──────────────┐
-│  Client  │     │  Backend    │     │   Stripe     │
-└────┬─────┘     └──────┬──────┘     └──────┬───────┘
-     │                  │                   │
-     │  1. Subscribe    │                   │
-     │─────────────────►│                   │
-     │                  │                   │
-     │                  │  2. Create        │
-     │                  │     Customer      │
-     │                  │──────────────────►│
-     │                  │                   │
-     │                  │  3. Create        │
-     │                  │     Checkout      │
-     │                  │     Session       │
-     │                  │──────────────────►│
-     │                  │                   │
-     │  4. Checkout URL │                   │
-     │◄─────────────────│                   │
-     │                  │                   │
-     │  5. Redirect to  │                   │
-     │     Stripe       │                   │
-     │──────────────────┼──────────────────►│
-     │                  │                   │
-     │  6. Payment      │                   │
-     │     Complete     │                   │
-     │◄─────────────────┼───────────────────│
-     │                  │                   │
-     │                  │  7. Webhook:      │
-     │                  │     subscription  │
-     │                  │     .created      │
-     │                  │◄──────────────────│
-     │                  │                   │
-     │  8. Subscription │                   │
-     │     Active       │                   │
-     │◄─────────────────│                   │
-     │                  │                   │
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Backend
+    participant Stripe
+
+    Client->>Backend: 1. Subscribe
+    Backend->>Stripe: 2. Create Customer
+    Backend->>Stripe: 3. Create Checkout Session
+    Backend->>Client: 4. Checkout URL
+    Client->>Stripe: 5. Redirect to Stripe
+    Stripe->>Client: 6. Payment Complete
+    Stripe->>Backend: 7. Webhook:  subscription.created
+    Backend->>Client: 8. Subscription Active
 ```
 
 ### 7.2 File Processing Pipeline
 
-```
-┌──────────┐     ┌─────────────┐     ┌──────────────┐     ┌──────────────┐
-│  Client  │     │ File Service│     │ Blob Storage │     │Azure Function│
-└────┬─────┘     └──────┬──────┘     └──────┬───────┘     └──────┬───────┘
-     │                  │                   │                    │
-     │  1. Upload File  │                   │                    │
-     │─────────────────►│                   │                    │
-     │                  │                   │                    │
-     │                  │  2. Get SAS URL   │                    │
-     │                  │──────────────────►│                    │
-     │                  │                   │                    │
-     │  3. SAS URL +    │                   │                    │
-     │     File Record  │                   │                    │
-     │◄─────────────────│                   │                    │
-     │                  │                   │                    │
-     │  4. Upload to    │                   │                    │
-     │     Blob         │                   │                    │
-     │──────────────────┼──────────────────►│                    │
-     │                  │                   │                    │
-     │                  │                   │  5. Blob Trigger   │
-     │                  │                   │───────────────────►│
-     │                  │                   │                    │
-     │                  │                   │  6. Process File   │
-     │                  │                   │◄───────────────────│
-     │                  │                   │                    │
-     │                  │  7. Update Status │                    │
-     │                  │◄──────────────────┼────────────────────│
-     │                  │                   │                    │
-     │  8. SignalR:     │                   │                    │
-     │     File Ready   │                   │                    │
-     │◄─────────────────│                   │                    │
-     │                  │                   │                    │
+```mermaid
+sequenceDiagram
+    participant Client
+    participant FileService as File Service
+    participant Blob as Blob Storage
+    participant Function as Azure Function
+
+    Client->>FileService: 1. Upload File
+    FileService->>Blob: 2. Get SAS URL
+    FileService->>Client: 3. SAS URL + File Record
+    Client->>Blob:  4. Upload to Blob
+    Blob->>Function: 5. Blob Trigger
+    Function->>Blob: 6. Process File
+    Function->>FileService: 7. Update Status
+    FileService->>Client: 8. SignalR:  File Ready
 ```
 
 ---
@@ -910,65 +878,53 @@ public class SubscriptionLimits
 
 ### 8.1 Azure Resource Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        Azure Subscription                                    │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │                    Resource Group: tsv-production                      │  │
-│  │                                                                        │  │
-│  │  ┌─────────────────────────────────────────────────────────────────┐  │  │
-│  │  │                     Networking                                   │  │  │
-│  │  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐             │  │  │
-│  │  │  │Azure Front  │  │   Azure     │  │   Virtual   │             │  │  │
-│  │  │  │   Door      │  │    CDN      │  │   Network   │             │  │  │
-│  │  │  │  + WAF      │  │             │  │             │             │  │  │
-│  │  │  └─────────────┘  └─────────────┘  └─────────────┘             │  │  │
-│  │  └─────────────────────────────────────────────────────────────────┘  │  │
-│  │                                                                        │  │
-│  │  ┌─────────────────────────────────────────────────────────────────┐  │  │
-│  │  │                     Compute                                      │  │  │
-│  │  │  ┌─────────────────────────┐  ┌─────────────────────────┐      │  │  │
-│  │  │  │   Azure Container Apps  │  │    Azure Functions      │      │  │  │
-│  │  │  │   (or AKS)              │  │    (Consumption Plan)   │      │  │  │
-│  │  │  │                         │  │                         │      │  │  │
-│  │  │  │  - API Services         │  │  - File Processor       │      │  │  │
-│  │  │  │  - SignalR Hub          │  │  - Data Transformer     │      │  │  │
-│  │  │  │                         │  │  - Export Generator     │      │  │  │
-│  │  │  │                         │  │  - Cleanup Function     │      │  │  │
-│  │  │  └─────────────────────────┘  └─────────────────────────┘      │  │  │
-│  │  └─────────────────────────────────────────────────────────────────┘  │  │
-│  │                                                                        │  │
-│  │  ┌─────────────────────────────────────────────────────────────────┐  │  │
-│  │  │                     Data & Storage                               │  │  │
-│  │  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐             │  │  │
-│  │  │  │ Azure SQL   │  │ Azure Blob  │  │ Azure Redis │             │  │  │
-│  │  │  │ Database    │  │ Storage     │  │ Cache       │             │  │  │
-│  │  │  │ (Gen Purpose)│ │ (GPv2)      │  │ (Standard)  │             │  │  │
-│  │  │  └─────────────┘  └─────────────┘  └─────────────┘             │  │  │
-│  │  │                                                                  │  │  │
-│  │  │  ┌─────────────┐  ┌─────────────┐                               │  │  │
-│  │  │  │Azure Queue  │  │Azure Service│                               │  │  │
-│  │  │  │Storage      │  │Bus (opt.)   │                               │  │  │
-│  │  │  └─────────────┘  └─────────────┘                               │  │  │
-│  │  └─────────────────────────────────────────────────────────────────┘  │  │
-│  │                                                                        │  │
-│  │  ┌─────────────────────────────────────────────────────────────────┐  │  │
-│  │  │                     Identity & Security                          │  │  │
-│  │  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐             │  │  │
-│  │  │  │ Azure AD    │  │ Azure Key   │  │ Azure API   │             │  │  │
-│  │  │  │ B2C         │  │ Vault       │  │ Management  │             │  │  │
-│  │  │  └─────────────┘  └─────────────┘  └─────────────┘             │  │  │
-│  │  └─────────────────────────────────────────────────────────────────┘  │  │
-│  │                                                                        │  │
-│  │  ┌─────────────────────────────────────────────────────────────────┐  │  │
-│  │  │                     Monitoring                                   │  │  │
-│  │  │  ┌─────────────────────────┐  ┌─────────────────────────┐      │  │  │
-│  │  │  │ Application Insights    │  │ Azure Monitor           │      │  │  │
-│  │  │  │                         │  │ (Alerts, Dashboards)    │      │  │  │
-│  │  │  └─────────────────────────┘  └─────────────────────────┘      │  │  │
-│  │  └─────────────────────────────────────────────────────────────────┘  │  │
-│  └───────────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph Subscription["Azure Subscription"]
+        subgraph RG["Resource Group:  tsv-production"]
+            subgraph Networking["Networking"]
+                FrontDoor["Azure Front Door + WAF"]
+                CDN["Azure CDN"]
+                VNet["Virtual Network"]
+            end
+
+            subgraph Compute["Compute"]
+                ContainerApps["Azure Container Apps<br/>(or AKS)<br/>- API Services<br/>- SignalR Hub"]
+                Functions["Azure Functions<br/>(Consumption Plan)<br/>- File Processor<br/>- Data Transformer<br/>- Export Generator<br/>- Cleanup Function"]
+            end
+
+            subgraph DataStorage["Data & Storage"]
+                SQL["Azure SQL Database<br/>(Gen Purpose)"]
+                BlobStorage["Azure Blob Storage<br/>(GPv2)"]
+                Redis["Azure Redis Cache<br/>(Standard)"]
+                Queue["Azure Queue Storage"]
+                ServiceBus["Azure Service Bus<br/>(optional)"]
+            end
+
+            subgraph Identity["Identity & Security"]
+                B2C["Azure AD B2C"]
+                KeyVault["Azure Key Vault"]
+                APIM["Azure API Management"]
+            end
+
+            subgraph Monitoring["Monitoring"]
+                AppInsights["Application Insights"]
+                Monitor["Azure Monitor<br/>(Alerts, Dashboards)"]
+            end
+        end
+    end
+
+    FrontDoor --> ContainerApps
+    CDN --> ContainerApps
+    ContainerApps --> SQL
+    ContainerApps --> BlobStorage
+    ContainerApps --> Redis
+    Functions --> BlobStorage
+    Functions --> Queue
+    ContainerApps --> APIM
+    APIM --> B2C
+    ContainerApps --> KeyVault
+    ContainerApps --> AppInsights
 ```
 
 ### 8.2 Environment Strategy
@@ -981,6 +937,32 @@ public class SubscriptionLimits
 | **Production** | Live service | Full scale, HA configuration |
 
 ### 8.3 CI/CD Pipeline
+
+```mermaid
+flowchart LR
+    subgraph Build["Build Stage"]
+        BuildBackend["Build Backend<br/>- dotnet restore<br/>- dotnet build<br/>- dotnet test<br/>- dotnet publish<br/>- docker build<br/>- docker push"]
+        BuildFrontend["Build Frontend<br/>- npm ci<br/>- npm run lint<br/>- npm run test<br/>- npm run build<br/>- upload artifacts"]
+    end
+
+    subgraph DeployTest["Deploy Test Stage"]
+        InfraTest["Deploy Infrastructure<br/>- terraform plan<br/>- terraform apply"]
+        AppTest["Deploy Application<br/>- deploy containers<br/>- deploy frontend to CDN<br/>- run smoke tests"]
+    end
+
+    subgraph DeployStaging["Deploy Staging Stage"]
+        InfraStaging["Deploy Infrastructure"]
+        AppStaging["Deploy Application<br/>- run integration tests"]
+    end
+
+    subgraph DeployProd["Deploy Production Stage<br/>(Manual Approval)"]
+        AppProd["Deploy Application<br/>- blue-green deployment<br/>- health checks<br/>- traffic switch"]
+    end
+
+    Build --> DeployTest
+    DeployTest --> DeployStaging
+    DeployStaging --> DeployProd
+```
 
 ```yaml
 # High-level pipeline structure
@@ -1043,34 +1025,28 @@ stages:
 
 ### 9.1 Monitoring Strategy
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        Observability Stack                                   │
-│                                                                              │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                      Application Insights                            │    │
-│  │                                                                      │    │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │    │
-│  │  │   Request    │  │  Exception   │  │  Dependency  │              │    │
-│  │  │   Telemetry  │  │   Tracking   │  │   Tracking   │              │    │
-│  │  └──────────────┘  └──────────────┘  └──────────────┘              │    │
-│  │                                                                      │    │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │    │
-│  │  │   Custom     │  │  Performance │  │  Distributed │              │    │
-│  │  │   Metrics    │  │   Counters   │  │   Tracing    │              │    │
-│  │  └──────────────┘  └──────────────┘  └──────────────┘              │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                              │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                        Azure Monitor                                 │    │
-│  │                                                                      │    │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │    │
-│  │  │   Alerts     │  │  Dashboards  │  │  Log         │              │    │
-│  │  │              │  │              │  │  Analytics   │              │    │
-│  │  └──────────────┘  └──────────────┘  └──────────────┘              │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph Observability["Observability Stack"]
+        subgraph AppInsights["Application Insights"]
+            RequestTelemetry["Request Telemetry"]
+            ExceptionTracking["Exception Tracking"]
+            DependencyTracking["Dependency Tracking"]
+            CustomMetrics["Custom Metrics"]
+            PerfCounters["Performance Counters"]
+            DistributedTracing["Distributed Tracing"]
+        end
+
+        subgraph AzureMonitor["Azure Monitor"]
+            Alerts["Alerts"]
+            Dashboards["Dashboards"]
+            LogAnalytics["Log Analytics"]
+        end
+    end
+
+    RequestTelemetry --> LogAnalytics
+    ExceptionTracking --> Alerts
+    CustomMetrics --> Dashboards
 ```
 
 ### 9.2 Key Metrics
@@ -1093,18 +1069,18 @@ stages:
 ```csharp
 // Structured logging with Serilog
 Log.Information(
-    "File processed successfully. FileId: {FileId}, Size: {Size}, Duration: {Duration}ms",
+    "File processed successfully.  FileId: {FileId}, Size:  {Size}, Duration: {Duration}ms",
     fileId,
     fileSize,
     processingDuration
 );
 
 // Log levels
-- Verbose: Detailed debugging information
+- Verbose:  Detailed debugging information
 - Debug: Development-time diagnostics
 - Information: General operational events
 - Warning: Abnormal or unexpected events
-- Error: Errors and exceptions
+- Error:  Errors and exceptions
 - Fatal: Critical failures
 ```
 
@@ -1175,12 +1151,12 @@ Log.Information(
 
 ## 12. Summary
 
-This architecture provides a solid foundation for the TimeSeriesViewer SaaS platform:
+This architecture provides a solid foundation for the TimeSeriesViewer SaaS platform: 
 
-- **Scalable**: Designed to handle growth from MVP to enterprise scale
+- **Scalable**:  Designed to handle growth from MVP to enterprise scale
 - **Secure**: Multiple layers of security and compliance measures
 - **Observable**: Comprehensive monitoring and alerting
 - **Maintainable**: Clean separation of concerns and modular design
 - **Cost-Efficient**: Pay-per-use services and optimization strategies
 
-The architecture can be implemented incrementally, starting with core functionality and adding advanced features as the product matures.
+The architecture can be implemented incrementally, starting with core functionality and adding advanced features as the product matures. 
