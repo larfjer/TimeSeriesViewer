@@ -273,7 +273,7 @@ data "azurerm_client_config" "current" {}
 ### 2.5 MVP Cost Breakdown
 
 ```mermaid
-pie title MVP Monthly Cost Estimate (~€40-60)
+pie title MVP Monthly Cost Estimate (Typical ~€50)
     "App Service (B1)" : 12
     "SQL Serverless (avg usage)" : 20
     "Blob Storage (10GB)" : 2
@@ -295,7 +295,7 @@ pie title MVP Monthly Cost Estimate (~€40-60)
 | **Total (typical)** | | **€40-60** |
 | **Total (peak usage)** | | **€60-80** |
 
-> **Note**: Actual costs depend on SQL compute usage (auto-pause reduces costs during idle periods) and data transfer. The €40-60 range represents typical usage with moderate SQL activity.
+> **Note**: Actual costs depend on SQL compute usage (auto-pause reduces costs during idle periods) and data transfer. The full range is €40-80/month depending on usage patterns.
 
 ### 2.6 MVP Deployment Checklist
 
