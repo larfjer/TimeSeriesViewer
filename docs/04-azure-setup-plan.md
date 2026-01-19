@@ -32,7 +32,7 @@ flowchart TB
 
     subgraph Azure["Azure Cloud (MVP)"]
         subgraph RG["Resource Group: tsv-mvp"]
-            AppService["Azure App Service<br/>(Free/Basic Tier)<br/>API + Frontend"]
+            AppService["Azure App Service<br/>(Basic B1 Tier)<br/>API + Frontend"]
             
             SQLServerless["Azure SQL<br/>(Serverless)<br/>Auto-pause enabled"]
             
@@ -68,7 +68,7 @@ flowchart TB
 | **Identity** | Azure AD B2C (Free) | Azure AD B2C (Premium) | Upgrade tier |
 | **Monitoring** | App Insights (Basic) | App Insights + Log Analytics | Add Log Analytics workspace |
 | **Networking** | Public endpoints | VNet + Private endpoints | Add VNet integration |
-| **Estimated Cost** | **€30-80/month** | **€2,000-5,000/month** | Incremental scaling |
+| **Estimated Cost** | **€40-80/month** | **€2,000-5,000/month** | Incremental scaling |
 
 ### 2.3 MVP Resource Configuration
 
@@ -101,7 +101,7 @@ resource "azurerm_linux_web_app" "api" {
 
   app_settings = {
     "ASPNETCORE_ENVIRONMENT" = "Production"
-    "APPLICATIONINSIGHTS_CONNECTION_STRING" = azurerm_application_insights.main.connection_string
+    "APPLICATIONINSIGHTS_CONNECTION_STRING" = azurerm_application_insights.mvp.connection_string
   }
 }
 ```
@@ -273,7 +273,7 @@ data "azurerm_client_config" "current" {}
 ### 2.5 MVP Cost Breakdown
 
 ```mermaid
-pie title MVP Monthly Cost Estimate (~€50-80)
+pie title MVP Monthly Cost Estimate (~€40-60)
     "App Service (B1)" : 12
     "SQL Serverless (avg usage)" : 20
     "Blob Storage (10GB)" : 2
