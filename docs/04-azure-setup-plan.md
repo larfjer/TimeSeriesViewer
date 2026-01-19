@@ -17,7 +17,419 @@ This document outlines a comprehensive Azure infrastructure setup plan for the T
 
 ---
 
-## 2. Infrastructure Architecture Overview
+## 2. MVP Deployment Strategy
+
+This section outlines a minimal viable product (MVP) deployment strategy designed to minimize costs while maintaining the ability to scale into the full production architecture described in later sections.
+
+### 2.1 MVP Architecture Overview
+
+```mermaid
+flowchart TB
+    subgraph Internet["Internet"]
+        Users["Users/Browsers"]
+        External["External Services<br/>(Google, Microsoft, Stripe)"]
+    end
+
+    subgraph Azure["Azure Cloud (MVP)"]
+        subgraph RG["Resource Group: tsv-mvp"]
+            AppService["Azure App Service<br/>(Free/Basic Tier)<br/>API + Frontend"]
+            
+            SQLServerless["Azure SQL<br/>(Serverless)<br/>Auto-pause enabled"]
+            
+            BlobStorage["Azure Blob Storage<br/>(LRS)<br/>Hot tier only"]
+            
+            B2C["Azure AD B2C<br/>(Free tier)"]
+            
+            KV["Key Vault<br/>(Standard)"]
+            
+            AppInsights["Application Insights<br/>(Basic)"]
+        end
+    end
+
+    Users --> AppService
+    External --> B2C
+    B2C --> AppService
+    AppService --> SQLServerless
+    AppService --> BlobStorage
+    AppService --> KV
+    AppService --> AppInsights
+```
+
+### 2.2 MVP vs Production Comparison
+
+| Component | MVP (Cost Optimized) | Production (Full Scale) | Migration Path |
+|-----------|---------------------|------------------------|----------------|
+| **Compute** | App Service (B1) | Container Apps + Functions | Containerize app, deploy to ACA |
+| **Database** | SQL Serverless (auto-pause) | SQL S2 + Geo-replica | Scale up SKU, add replica |
+| **Cache** | *None (use SQL)* | Redis Standard C1 | Add Redis, update connection strings |
+| **Storage** | Blob LRS (Hot only) | Blob GRS + lifecycle | Enable GRS, add lifecycle policies |
+| **CDN/WAF** | *None* | Front Door Premium | Add Front Door in front of App Service |
+| **API Gateway** | *None (built-in routing)* | API Management Standard | Add APIM, configure policies |
+| **Identity** | Azure AD B2C (Free) | Azure AD B2C (Premium) | Upgrade tier |
+| **Monitoring** | App Insights (Basic) | App Insights + Log Analytics | Add Log Analytics workspace |
+| **Networking** | Public endpoints | VNet + Private endpoints | Add VNet integration |
+| **Estimated Cost** | **€30-80/month** | **€2,000-5,000/month** | Incremental scaling |
+
+### 2.3 MVP Resource Configuration
+
+#### 2.3.1 Compute: Azure App Service
+
+```hcl
+# MVP App Service Plan - can scale to Premium later
+resource "azurerm_service_plan" "mvp" {
+  name                = "asp-tsv-mvp"
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+  os_type             = "Linux"
+  sku_name            = "B1"  # Basic tier: €12/month
+  
+  # Can upgrade to P1v3 for production: sku_name = "P1v3"
+}
+
+resource "azurerm_linux_web_app" "api" {
+  name                = "app-tsv-mvp-api"
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+  service_plan_id     = azurerm_service_plan.mvp.id
+
+  site_config {
+    application_stack {
+      dotnet_version = "8.0"
+    }
+    always_on = false  # Save costs, enable for production
+  }
+
+  app_settings = {
+    "ASPNETCORE_ENVIRONMENT" = "Production"
+    "APPLICATIONINSIGHTS_CONNECTION_STRING" = azurerm_application_insights.main.connection_string
+  }
+}
+```
+
+#### 2.3.2 Database: Azure SQL Serverless
+
+```hcl
+# MVP SQL Server with Serverless tier - auto-pauses when idle
+resource "azurerm_mssql_server" "mvp" {
+  name                         = "sql-tsv-mvp"
+  resource_group_name          = azurerm_resource_group.main.name
+  location                     = azurerm_resource_group.main.location
+  version                      = "12.0"
+  administrator_login          = "sqladmin"
+  administrator_login_password = random_password.sql_admin.result
+  minimum_tls_version          = "1.2"
+}
+
+resource "azurerm_mssql_database" "mvp" {
+  name                        = "db-tsv-mvp"
+  server_id                   = azurerm_mssql_server.mvp.id
+  
+  # Serverless tier - only pay for actual usage
+  sku_name                    = "GP_S_Gen5_1"
+  min_capacity                = 0.5      # Min vCores when active
+  auto_pause_delay_in_minutes = 60       # Pause after 1 hour idle
+  
+  max_size_gb                 = 32       # Start small
+  zone_redundant              = false    # Save costs
+  storage_account_type        = "Local"  # LRS for MVP
+  
+  short_term_retention_policy {
+    retention_days = 7  # Minimal backup retention for MVP
+  }
+}
+
+# Firewall rule to allow Azure services
+resource "azurerm_mssql_firewall_rule" "azure_services" {
+  name             = "AllowAzureServices"
+  server_id        = azurerm_mssql_server.mvp.id
+  start_ip_address = "0.0.0.0"
+  end_ip_address   = "0.0.0.0"
+}
+```
+
+#### 2.3.3 Storage: Minimal Configuration
+
+```hcl
+# MVP Storage Account - basic configuration
+resource "azurerm_storage_account" "mvp" {
+  name                     = "sttsvmvp"
+  resource_group_name      = azurerm_resource_group.main.name
+  location                 = azurerm_resource_group.main.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"  # Local redundancy only for MVP
+  min_tls_version          = "TLS1_2"
+
+  blob_properties {
+    versioning_enabled = false  # Disable for MVP to save costs
+    
+    delete_retention_policy {
+      days = 7  # Minimal soft delete
+    }
+  }
+}
+
+# Single container for all files
+resource "azurerm_storage_container" "files" {
+  name                  = "files"
+  storage_account_name  = azurerm_storage_account.mvp.name
+  container_access_type = "private"
+}
+```
+
+#### 2.3.4 Identity: Azure AD B2C Free Tier
+
+```hcl
+# Note: Azure AD B2C tenant created via Azure Portal
+# Free tier includes:
+# - 50,000 MAUs (Monthly Active Users)
+# - Local accounts
+# - Social identity providers (Google, Microsoft, Facebook)
+# - Basic user flows
+
+# App registration for the API
+resource "azuread_application" "api" {
+  display_name = "TimeSeriesViewer API (MVP)"
+  
+  api {
+    oauth2_permission_scope {
+      admin_consent_display_name = "Access TimeSeriesViewer API"
+      admin_consent_description  = "Allow the application to access TimeSeriesViewer API"
+      id                         = random_uuid.api_scope.result
+      enabled                    = true
+      type                       = "User"
+      value                      = "access_as_user"
+    }
+  }
+}
+```
+
+#### 2.3.5 Monitoring: Basic Application Insights
+
+```hcl
+# MVP Application Insights - basic telemetry
+resource "azurerm_application_insights" "mvp" {
+  name                = "appi-tsv-mvp"
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+  application_type    = "web"
+  
+  # Basic sampling to reduce costs
+  sampling_percentage = 50
+  
+  # 30-day retention (free)
+  retention_in_days   = 30
+}
+```
+
+### 2.4 MVP Terraform Configuration
+
+```hcl
+# environments/mvp/main.tf
+terraform {
+  required_version = ">= 1.6.0"
+  
+  backend "azurerm" {
+    resource_group_name  = "tsv-rg-tfstate"
+    storage_account_name = "tsvtfstate"
+    container_name       = "tfstate"
+    key                  = "mvp.tfstate"
+  }
+}
+
+locals {
+  environment = "mvp"
+  location    = "westeurope"
+  prefix      = "tsv"
+  
+  common_tags = {
+    Environment = "MVP"
+    Project     = "TimeSeriesViewer"
+    ManagedBy   = "Terraform"
+    CostCenter  = "TSV-MVP"
+  }
+}
+
+# Resource Group
+resource "azurerm_resource_group" "main" {
+  name     = "${local.prefix}-rg-${local.environment}"
+  location = local.location
+  tags     = local.common_tags
+}
+
+# Key Vault for secrets
+resource "azurerm_key_vault" "main" {
+  name                = "${local.prefix}-kv-${local.environment}"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  tenant_id           = data.azurerm_client_config.current.tenant_id
+  sku_name            = "standard"
+  
+  purge_protection_enabled = false  # Allow deletion for MVP
+}
+
+data "azurerm_client_config" "current" {}
+```
+
+### 2.5 MVP Cost Breakdown
+
+```mermaid
+pie title MVP Monthly Cost Estimate (~€50-80)
+    "App Service (B1)" : 12
+    "SQL Serverless (avg usage)" : 20
+    "Blob Storage (10GB)" : 2
+    "Key Vault" : 1
+    "Application Insights" : 5
+    "Azure AD B2C (Free)" : 0
+    "Bandwidth (estimated)" : 10
+```
+
+| Resource | SKU/Tier | Estimated Monthly Cost |
+|----------|----------|----------------------|
+| App Service | Basic B1 | €12 |
+| Azure SQL | Serverless GP_S_Gen5_1 | €15-30 (usage-based) |
+| Blob Storage | Standard LRS (10GB) | €2 |
+| Key Vault | Standard | €1 |
+| Application Insights | Basic (1GB/day) | €5 |
+| Azure AD B2C | Free tier (50k MAU) | €0 |
+| Bandwidth | ~50GB egress | €5-10 |
+| **Total** | | **€40-60** |
+
+### 2.6 MVP Deployment Checklist
+
+- [ ] **Phase 1: Foundation (Day 1)**
+  - [ ] Create Azure subscription (if needed)
+  - [ ] Create resource group `tsv-rg-mvp`
+  - [ ] Deploy Key Vault for secrets
+  - [ ] Set up Terraform state backend
+
+- [ ] **Phase 2: Identity (Day 1-2)**
+  - [ ] Create Azure AD B2C tenant
+  - [ ] Configure sign-up/sign-in user flows
+  - [ ] Add Google and Microsoft identity providers
+  - [ ] Register API application
+
+- [ ] **Phase 3: Data Layer (Day 2)**
+  - [ ] Deploy Azure SQL Serverless
+  - [ ] Run database migrations
+  - [ ] Deploy Blob Storage
+  - [ ] Store connection strings in Key Vault
+
+- [ ] **Phase 4: Application (Day 3)**
+  - [ ] Deploy App Service
+  - [ ] Configure deployment from GitHub
+  - [ ] Set up environment variables
+  - [ ] Configure custom domain (optional)
+
+- [ ] **Phase 5: Monitoring (Day 3)**
+  - [ ] Deploy Application Insights
+  - [ ] Configure basic alerts
+  - [ ] Test end-to-end flow
+
+### 2.7 Scaling from MVP to Production
+
+```mermaid
+flowchart LR
+    subgraph MVP["MVP Phase"]
+        M1["App Service B1"]
+        M2["SQL Serverless"]
+        M3["Blob LRS"]
+    end
+
+    subgraph Growth["Growth Phase"]
+        G1["App Service P1v3"]
+        G2["SQL S0"]
+        G3["Blob GRS"]
+        G4["Redis Basic"]
+    end
+
+    subgraph Scale["Scale Phase"]
+        S1["Container Apps"]
+        S2["SQL S2 + Replica"]
+        S3["Full Storage"]
+        S4["Redis Standard"]
+        S5["Front Door"]
+    end
+
+    subgraph Production["Production Phase"]
+        P1["ACA + Functions"]
+        P2["SQL HA"]
+        P3["Full DR"]
+        P4["Redis Cluster"]
+        P5["Full Networking"]
+    end
+
+    MVP --> |"100 users<br/>€50/mo"| Growth
+    Growth --> |"1,000 users<br/>€200/mo"| Scale
+    Scale --> |"10,000 users<br/>€1,000/mo"| Production
+```
+
+#### Scaling Triggers
+
+| Metric | MVP Limit | Action | Target Architecture |
+|--------|-----------|--------|---------------------|
+| Monthly Active Users | 100 | Add Redis, scale SQL | Growth Phase |
+| Response Time P95 | > 500ms | Scale App Service to P1v3 | Growth Phase |
+| Storage Size | > 50GB | Enable GRS, add lifecycle | Scale Phase |
+| Concurrent Users | > 50 | Migrate to Container Apps | Scale Phase |
+| API Calls/sec | > 100 | Add API Management | Scale Phase |
+| Global Users | > 1 region | Add Front Door | Production Phase |
+
+### 2.8 MVP GitHub Actions Deployment
+
+```yaml
+# .github/workflows/deploy-mvp.yml
+name: Deploy MVP
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  AZURE_WEBAPP_NAME: app-tsv-mvp-api
+  DOTNET_VERSION: '8.0.x'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      
+      - name: Build
+        run: dotnet build --configuration Release
+      
+      - name: Publish
+        run: dotnet publish -c Release -o ./publish
+      
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: ./publish
+```
+
+### 2.9 MVP Limitations and Trade-offs
+
+| Trade-off | Impact | Mitigation |
+|-----------|--------|------------|
+| No Redis cache | Slower repeated queries | Optimize SQL queries, add caching later |
+| SQL auto-pause | Cold start delay (~30s) | Keep minimum activity or disable for paid users |
+| No CDN/WAF | Higher latency, less protection | Use Cloudflare free tier if needed |
+| No VNet | Public endpoints | Use managed identity, firewall rules |
+| LRS storage | Single region risk | Regular backups, upgrade to GRS when needed |
+| Basic monitoring | Limited insights | Focus on critical metrics only |
+| No auto-scaling | Manual intervention | Monitor and scale proactively |
+
+---
+
+## 3. Infrastructure Architecture Overview
 
 ### 2.1 High-Level Architecture
 
@@ -106,9 +518,9 @@ flowchart TB
 
 ---
 
-## 3. Environment Strategy
+## 4. Environment Strategy
 
-### 3.1 Environment Overview
+### 4.1 Environment Overview
 
 ```mermaid
 flowchart LR
@@ -124,7 +536,7 @@ flowchart LR
     Staging --> |Manual Approval| Prod
 ```
 
-### 3.2 Environment Configuration Matrix
+### 4.2 Environment Configuration Matrix
 
 | Aspect | Development | Test | Staging | Production |
 |--------|-------------|------|---------|------------|
@@ -141,7 +553,7 @@ flowchart LR
 | **Backup** | None | None | Daily | Continuous |
 | **Est. Monthly Cost** | €50-100 | €100-200 | €500-800 | €2,000-5,000 |
 
-### 3.3 Resource Naming Convention
+### 4.3 Resource Naming Convention
 
 ```
 {prefix}-{resource_type}-{environment}-{region}-{instance}
@@ -157,9 +569,9 @@ Examples:
 
 ---
 
-## 4. Infrastructure as Code (Terraform)
+## 5. Infrastructure as Code (Terraform)
 
-### 4.1 Project Structure
+### 5.1 Project Structure
 
 ```
 infrastructure/
@@ -222,9 +634,9 @@ infrastructure/
     └── terraform-usage.md
 ```
 
-### 4.2 Core Terraform Configuration
+### 5.2 Core Terraform Configuration
 
-#### 4.2.1 Provider Configuration (`shared/providers.tf`)
+#### 5.2.1 Provider Configuration (`shared/providers.tf`)
 
 ```hcl
 terraform {
@@ -259,7 +671,7 @@ provider "azurerm" {
 }
 ```
 
-#### 4.2.2 Environment Main Configuration (`environments/production/main.tf`)
+#### 5.2.2 Environment Main Configuration (`environments/production/main.tf`)
 
 ```hcl
 # Backend configuration for state management
@@ -403,9 +815,9 @@ module "monitoring" {
 data "azurerm_client_config" "current" {}
 ```
 
-### 4.3 Module Definitions
+### 5.3 Module Definitions
 
-#### 4.3.1 Networking Module (`modules/networking/main.tf`)
+#### 5.3.1 Networking Module (`modules/networking/main.tf`)
 
 ```hcl
 # Virtual Network
@@ -513,7 +925,7 @@ resource "azurerm_subnet_network_security_group_association" "data" {
 }
 ```
 
-#### 4.3.2 Data Module (`modules/data/main.tf`)
+#### 5.3.2 Data Module (`modules/data/main.tf`)
 
 ```hcl
 # Azure SQL Server
@@ -706,7 +1118,7 @@ resource "azurerm_storage_management_policy" "lifecycle" {
 }
 ```
 
-#### 4.3.3 Compute Module (`modules/compute/main.tf`)
+#### 5.3.3 Compute Module (`modules/compute/main.tf`)
 
 ```hcl
 # Container Apps Environment
@@ -858,9 +1270,9 @@ resource "azurerm_linux_function_app" "main" {
 
 ---
 
-## 5. Backup and Disaster Recovery
+## 6. Backup and Disaster Recovery
 
-### 5.1 Backup Strategy Overview
+### 6.1 Backup Strategy Overview
 
 ```mermaid
 flowchart TB
@@ -888,7 +1300,7 @@ flowchart TB
     Blob1 --> BlobBackup
 ```
 
-### 5.2 Backup Configuration by Resource
+### 6.2 Backup Configuration by Resource
 
 | Resource | Backup Type | Frequency | Retention | RPO | RTO |
 |----------|-------------|-----------|-----------|-----|-----|
@@ -901,9 +1313,9 @@ flowchart TB
 | **Key Vault** | Soft delete | On delete | 90 days | 0 | Instant |
 | **Redis** | RDB Snapshot | Hourly | 24 hours | 1 hour | 1 hour |
 
-### 5.3 Disaster Recovery Procedures
+### 6.3 Disaster Recovery Procedures
 
-#### 5.3.1 Database Failover
+#### 6.3.1 Database Failover
 
 ```mermaid
 sequenceDiagram
@@ -921,7 +1333,7 @@ sequenceDiagram
     App->>Secondary: Resume Operations
 ```
 
-#### 5.3.2 Recovery Runbook
+#### 6.3.2 Recovery Runbook
 
 ```markdown
 ## Database Point-in-Time Recovery
@@ -970,9 +1382,9 @@ sequenceDiagram
 
 ---
 
-## 6. Deployment Pipeline
+## 7. Deployment Pipeline
 
-### 6.1 CI/CD Architecture
+### 7.1 CI/CD Architecture
 
 ```mermaid
 flowchart LR
@@ -1007,7 +1419,7 @@ flowchart LR
     Staging --> |Manual Approval| Prod
 ```
 
-### 6.2 GitHub Actions Workflow
+### 7.2 GitHub Actions Workflow
 
 ```yaml
 # .github/workflows/deploy-infrastructure.yml
@@ -1103,7 +1515,7 @@ jobs:
         run: terraform apply -auto-approve tfplan
 ```
 
-### 6.3 Application Deployment
+### 7.3 Application Deployment
 
 ```yaml
 # .github/workflows/deploy-application.yml
@@ -1155,9 +1567,9 @@ jobs:
 
 ---
 
-## 7. Scaling Strategy
+## 8. Scaling Strategy
 
-### 7.1 Auto-Scaling Configuration
+### 8.1 Auto-Scaling Configuration
 
 ```mermaid
 flowchart TB
@@ -1188,7 +1600,7 @@ flowchart TB
     Queue --> Functions
 ```
 
-### 7.2 Scaling Rules (Terraform)
+### 8.2 Scaling Rules (Terraform)
 
 ```hcl
 # Container Apps scaling rules
@@ -1231,9 +1643,9 @@ template {
 
 ---
 
-## 8. Cost Management
+## 9. Cost Management
 
-### 8.1 Cost Breakdown Estimate
+### 9.1 Cost Breakdown Estimate
 
 ```mermaid
 pie title Monthly Cost Distribution (Production)
@@ -1247,7 +1659,7 @@ pie title Monthly Cost Distribution (Production)
     "Other (Key Vault, etc.)" : 50
 ```
 
-### 8.2 Cost Optimization Strategies
+### 9.2 Cost Optimization Strategies
 
 | Strategy | Resource | Savings | Implementation |
 |----------|----------|---------|----------------|
@@ -1258,7 +1670,7 @@ pie title Monthly Cost Distribution (Production)
 | **Right-sizing** | All | Variable | Regular review and adjustment |
 | **Dev/Test Pricing** | All | 40-80% | Use dev/test subscriptions |
 
-### 8.3 Budget Alerts
+### 9.3 Budget Alerts
 
 ```hcl
 # Azure Budget Alert
@@ -1293,9 +1705,9 @@ resource "azurerm_consumption_budget_resource_group" "main" {
 
 ---
 
-## 9. Security Configuration
+## 10. Security Configuration
 
-### 9.1 Security Architecture
+### 10.1 Security Architecture
 
 ```mermaid
 flowchart TB
@@ -1338,7 +1750,7 @@ flowchart TB
     ManagedId --> KeyVault
 ```
 
-### 9.2 Security Checklist
+### 10.2 Security Checklist
 
 - [ ] **Network Security**
   - [ ] Virtual Network with subnet isolation
@@ -1367,9 +1779,9 @@ flowchart TB
 
 ---
 
-## 10. Monitoring and Alerting
+## 11. Monitoring and Alerting
 
-### 10.1 Monitoring Architecture
+### 11.1 Monitoring Architecture
 
 ```mermaid
 flowchart TB
@@ -1414,7 +1826,7 @@ flowchart TB
     ActionGroups --> Email & Webhook & PagerDuty
 ```
 
-### 10.2 Key Alerts
+### 11.2 Key Alerts
 
 | Alert | Condition | Severity | Action |
 |-------|-----------|----------|--------|
@@ -1428,9 +1840,9 @@ flowchart TB
 
 ---
 
-## 11. Implementation Roadmap
+## 12. Implementation Roadmap
 
-### 11.1 Phase 1: Foundation (Week 1-2)
+### 12.1 Phase 1: Foundation (Week 1-2)
 
 ```mermaid
 gantt
@@ -1448,7 +1860,7 @@ gantt
     App Registrations           :c2, after c1, 2d
 ```
 
-### 11.2 Phase 2: Data Layer (Week 2-3)
+### 12.2 Phase 2: Data Layer (Week 2-3)
 
 - [ ] Deploy Azure SQL Database
 - [ ] Configure SQL backup policies
@@ -1457,7 +1869,7 @@ gantt
 - [ ] Configure storage lifecycle policies
 - [ ] Set up private endpoints
 
-### 11.3 Phase 3: Compute Layer (Week 3-4)
+### 12.3 Phase 3: Compute Layer (Week 3-4)
 
 - [ ] Deploy Container Apps Environment
 - [ ] Deploy initial API container
@@ -1465,7 +1877,7 @@ gantt
 - [ ] Configure scaling rules
 - [ ] Set up health checks
 
-### 11.4 Phase 4: Networking & Security (Week 4-5)
+### 12.4 Phase 4: Networking & Security (Week 4-5)
 
 - [ ] Deploy Azure Front Door
 - [ ] Configure WAF policies
@@ -1473,7 +1885,7 @@ gantt
 - [ ] Configure NSG rules
 - [ ] Enable DDoS protection
 
-### 11.5 Phase 5: Monitoring & CI/CD (Week 5-6)
+### 12.5 Phase 5: Monitoring & CI/CD (Week 5-6)
 
 - [ ] Deploy Application Insights
 - [ ] Configure Log Analytics
@@ -1483,7 +1895,7 @@ gantt
 
 ---
 
-## 12. Appendix
+## 13. Appendix
 
 ### A. Terraform Commands Reference
 
