@@ -292,7 +292,10 @@ pie title MVP Monthly Cost Estimate (~€40-60)
 | Application Insights | Basic (1GB/day) | €5 |
 | Azure AD B2C | Free tier (50k MAU) | €0 |
 | Bandwidth | ~50GB egress | €5-10 |
-| **Total** | | **€40-60** |
+| **Total (typical)** | | **€40-60** |
+| **Total (peak usage)** | | **€60-80** |
+
+> **Note**: Actual costs depend on SQL compute usage (auto-pause reduces costs during idle periods) and data transfer. The €40-60 range represents typical usage with moderate SQL activity.
 
 ### 2.6 MVP Deployment Checklist
 
@@ -431,7 +434,7 @@ jobs:
 
 ## 3. Infrastructure Architecture Overview
 
-### 2.1 High-Level Architecture
+### 3.1 High-Level Architecture
 
 ```mermaid
 flowchart TB
@@ -497,7 +500,7 @@ flowchart TB
     API --> AppInsights
 ```
 
-### 2.2 Resource Inventory
+### 3.2 Resource Inventory
 
 | Resource Type | Service | Purpose |
 |--------------|---------|---------|
