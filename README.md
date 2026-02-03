@@ -28,6 +28,9 @@ Comprehensive documentation is available in the `/docs` directory:
 3. **[Implementation Plan](docs/03-implementation-plan.md)**  
    Phased implementation roadmap with sprints, tasks, and resource requirements.
 
+4. **[Azure Setup and Deployment Plan](docs/04-azure-setup-plan.md)**  
+   Comprehensive Azure infrastructure setup plan including Terraform IaC, backup/disaster recovery, and deployment pipelines.
+
 ## Technology Stack
 
 ### Backend
